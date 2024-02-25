@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::OnceLock;
 
 use bitflags::Flags;
-use phf::phf_map;
+use phf::{phf_map, set};
 use regex::Regex;
 
 use crate::card::{Card, CardTransformer};
@@ -110,7 +110,8 @@ static OT_NAMES: phf::Map<u32, &'static str> = phf_map! {
     3u32 => "OT",
     4u32 => "Custom",
     11u32 => "SC",
-    8u32 => "SCONLY"
+    8u32 => "SCONLY",
+    1024u32 => "Draft"
 };
 
 static CATEGORY_NAMES: phf::Map<u64, &'static str> = phf_map! (
@@ -246,6 +247,7 @@ impl Xyyz {
 		
   		let mut setcodes: u64 = 0;
 		for setname in str.split("、") {
+            let setname = setname.trim();
 			let setcode = setnames.iter().find(|(_, v)| v == &&setname).map(|(k, _)| *k);
 			if let Some(setcode) = setcode {
 				setcodes = setcodes.checked_shl(16).unwrap() + setcode as u64;
@@ -328,18 +330,19 @@ impl Xyyz {
     }
 
     fn get_category(value: &str) -> Category {
-        join_from_phf_map(&CATEGORY_NAMES, value.split("、"))
+        join_from_phf_map(&CATEGORY_NAMES, value.split("、").map(|v| v.trim()))
     }
 }
 
 impl CardTransformer for Xyyz {
     fn to_string(card: &Card) -> String {
         let mut str = String::new();
+        let alias_text = if card.alias > 0 { format!("=>{}", card.alias) } else { String::new() };
 		if card._type.contains(Type::Monster) {
 			str += &format!("{}({}{}) {} {} {}{} {} {}", 
 				card.name, 
 				card.code,
-				if card.alias > 0 { format!("=>{}", card.alias) } else { String::new() },
+				alias_text,
 				Self::format_attribute(&card.attribute), 
 				Self::format_level(card), 
 				Self::format_race(&card.race), 
@@ -350,14 +353,14 @@ impl CardTransformer for Xyyz {
                 str += " ";
                 str += &Self::format_linkmarkers(&card.link_marker)
             }
-            if card.ot.bits() != (OT::OCG | OT::TCG).bits() {
-                str += " (";
-                str += &Self::format_ot(&card.ot);
-                str += ")"
-            }
 		} else {
-			str += &format!("{}({}) {}", card.name, card.code, Self::format_type(&card._type))
+			str += &format!("{}({}{}) {}", card.name, card.code, alias_text, Self::format_type(&card._type))
 		};
+        if card.ot.bits() != (OT::OCG | OT::TCG).bits() {
+            str += " (";
+            str += &Self::format_ot(&card.ot);
+            str += ")"
+        }
         if let Some(setnames) = Self::format_setcode(card) {
 			if setnames.len() > 0 {
 				str += &format!("\n系列：{}", setnames);
@@ -376,8 +379,8 @@ impl CardTransformer for Xyyz {
     fn from_string(str: &str) -> Vec<Card> {
         let mut cards = Vec::new();
         let mut current_card: Option<Card> = None;
-        let line_regex = Regex::new(r"^(.+)\((\d+)(\s*=>\s*(\d+)\s*)?\)\s+(.+)$").unwrap();
-        let parts_regex = Regex::new(r"(.) (.+) (.+?)(/.+)* (\d+|\?|∞) (\d+|\?|∞)\s*(\[.+\])?\s*(\((.+)\))?").unwrap();
+        let line_regex = Regex::new(r"^(.+)\((\d+)(\s*=>\s*(\d+)\s*)?\)\s+(.+?)\s*(\((.+)\))?$").unwrap();
+        let parts_regex = Regex::new(r"(.) (.+) (.+?)(/.+)* (\d+|\?|∞) (\d+|\?|∞)\s*(\[.+\])?").unwrap();
         let pendulum_regex: Regex = Regex::new(r"^←(\d+)\s*【灵摆】\s*(\d+)→$").unwrap();
         for line in str.split("\n") {
             if line.starts_with("#") { continue; }
@@ -406,6 +409,9 @@ impl CardTransformer for Xyyz {
                     pack: None,
                 };
                 let part_str = groups.get(5).unwrap().as_str();
+                if let Some(ot) = groups.get(7) {
+                    card.ot = Self::get_ot(ot.as_str());
+                }
                 if let Some(parts) = parts_regex.captures(part_str) {
                     let attr_str = parts.get(1).unwrap();
                     let level_str = parts.get(2).unwrap();
@@ -414,7 +420,6 @@ impl CardTransformer for Xyyz {
                     let atk_str = parts.get(5).unwrap();
                     let def_str = parts.get(6).unwrap();
                     let linkmarker_str = parts.get(7);
-                    let ot_str = parts.get(9);
 
                     card.attribute = Self::get_attribute(attr_str.as_str());
                     Self::set_level(&mut card, level_str.as_str());
@@ -426,9 +431,6 @@ impl CardTransformer for Xyyz {
                         card._type = card._type | Type::Link;
                         card.link_marker = Self::get_linkmarkers(marker.as_str());
                         card.defense = card.link_marker.bits();
-                    }
-                    if let Some(ot) = ot_str {
-                        card.ot = Self::get_ot(ot.as_str());
                     }
                 }
                 else { 
@@ -457,7 +459,9 @@ impl CardTransformer for Xyyz {
                     c.texts = line.trim_start_matches("提示文本：").split("、").map(|t| t.to_string()).collect();
                 }
                 else {
-                    c.desc.push('\n');
+                    if c.desc.len() > 0 {
+                        c.desc.push('\n');
+                    }
                     c.desc.extend(line.chars()); 
                 }
             }
@@ -487,7 +491,7 @@ fn test_format() {
 #[test]
 fn test_parse() {
     read_string_conf(&vec!["/Users/iami/Workshop/code/mycard/ygopro/strings.conf"]);
-	let cards = std::fs::read_to_string("/Users/iami/Workshop/code/mycard/cdb-transformer/test.log").unwrap();
+	let cards = std::fs::read_to_string("/Users/iami/Workshop/code/mycard/MyDIY/MyDIY.txt").unwrap();
 	let cc = Xyyz::from_string(&cards);
 	println!("{:?}", cc.len());
     let s = cc.into_iter().map(|c| Xyyz::to_string(&c)).collect::<Vec<_>>().join("\n\n");

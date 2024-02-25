@@ -73,7 +73,7 @@ impl CDB {
                 }
             }
             card.level = card.level & 0xff;
-            println!("{}", card.desc);
+            cards.push(card);
             true
         }).ok();
         cards

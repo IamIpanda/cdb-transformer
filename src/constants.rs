@@ -20,6 +20,8 @@ bitflags! {
         const TCG = 2;
         const Custom = 4;
         const SC = 8;
+
+        const Draft = 1024;
     }
 }
 

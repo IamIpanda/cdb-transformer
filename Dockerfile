@@ -3,7 +3,7 @@ WORKDIR /opt/cdb-transformer
 COPY Cargo.* ./
 RUN mkdir src && echo "fn main() {}" > src/main.rs
 RUN cargo fetch
-COPY src/*.rs src/
+COPY src src
 RUN cargo build --release
 
 FROM alpine

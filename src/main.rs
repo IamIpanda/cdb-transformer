@@ -6,6 +6,7 @@ use std::fs::write;
 
 use card::CardTransformer;
 use clap::{Parser, ValueEnum};
+use constants::OT;
 use transformers::*;
 
 #[derive(ValueEnum, Clone, Debug)]
@@ -30,7 +31,10 @@ struct Args {
     to: String,
     /// strings.conf path. This file is used to format set name inner xyyz format.
     #[arg(long)]
-    strings: Vec<String>
+    strings: Vec<String>,
+    /// allow draft cards goto result.
+    #[arg(long)]
+    allow_draft: bool
 }
 
 fn guess_format(path: &String) -> Format {
@@ -45,11 +49,14 @@ fn main() {
     let args = Args::parse();
     read_string_conf(&args.strings);
     
-    let cards = match args.from_format.map_or_else(|| guess_format(&args.from), |f| f) {
+    let mut cards = match args.from_format.map_or_else(|| guess_format(&args.from), |f| f) {
         Format::Xyyz => Xyyz::from_string(&std::fs::read_to_string(args.from).expect("Read file failed")),
         Format::SQL => SQL::from_string(&std::fs::read_to_string(args.from).expect("Read file failed")),
         Format::CDB => CDB::from_string(&args.from),
     };
+    if !(args.allow_draft) {
+        cards = cards.into_iter().filter(|c| !c.ot.contains(OT::Draft)).collect();
+    }
     match args.to_format.map_or_else(|| guess_format(&args.to), |f| f) {
         Format::Xyyz => write(args.to, cards.iter().map(|c| Xyyz::to_string(c)).collect::<Vec<_>>().join("\n\n")),
         Format::SQL => write(args.to, cards.iter().map(|c| SQL::to_string(c)).collect::<Vec<_>>().join("\n\n")),
