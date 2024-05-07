@@ -2,14 +2,14 @@ mod card;
 mod constants;
 mod transformers;
 
-use std::fs::write;
+use std::{ffi::OsString, fs::write};
 
 use card::CardTransformer;
 use clap::{Parser, ValueEnum};
 use constants::OT;
 use transformers::*;
 
-#[derive(ValueEnum, Clone, Debug)]
+#[derive(ValueEnum, Clone, Copy, Debug)]
 enum Format {
     Xyyz,
     CDB,
@@ -23,7 +23,7 @@ struct Args {
     #[arg(long)]
     from_format: Option<Format>,
     #[arg(short, long)]
-    from: String,
+    from: Vec<String>,
     /// will guess from filename if not provided.
     #[arg(long)]
     to_format: Option<Format>,
@@ -45,14 +45,38 @@ fn guess_format(path: &String) -> Format {
     else { println!("Cannot determain the format by filename. Make it as text..."); Format::Xyyz }
 }
 
+fn preprocess() -> Vec<OsString> {
+    let mut prcoessd_args = Vec::new();
+    let mut controlling = OsString::new();
+    let mut argument_count = 0;
+    for arg in std::env::args_os() {
+        if let Some(s) = arg.to_str() {
+            if s.starts_with("-") {
+                controlling = arg.clone();
+                argument_count = 0;
+            } else {
+                argument_count += 1;
+                if argument_count > 1 {
+                    prcoessd_args.push(controlling.clone())
+                }
+            }
+        } 
+        prcoessd_args.push(arg)
+    }
+    prcoessd_args
+}
+
 fn main() {
-    let args = Args::parse();
+    let args = Args::parse_from(preprocess());
     read_string_conf(&args.strings);
-    
-    let mut cards = match args.from_format.map_or_else(|| guess_format(&args.from), |f| f) {
-        Format::Xyyz => Xyyz::from_string(&std::fs::read_to_string(args.from).expect("Read file failed")),
-        Format::SQL => SQL::from_string(&std::fs::read_to_string(args.from).expect("Read file failed")),
-        Format::CDB => CDB::from_string(&args.from),
+    let mut cards = Vec::new();
+    for source in args.from {
+        let card_parts = match args.from_format.map_or_else(|| guess_format(&source), |f| f) {
+            Format::Xyyz => Xyyz::from_string(&std::fs::read_to_string(&source).expect(&format!("Read file {} failed", source))),
+            Format::SQL  =>  SQL::from_string(&std::fs::read_to_string(&source).expect(&format!("Read file {} failed", source))),
+            Format::CDB  =>  CDB::from_string(&source),
+        };
+        cards.extend(card_parts)
     };
     if !(args.allow_draft) {
         cards = cards.into_iter().filter(|c| !c.ot.contains(OT::Draft)).collect();
