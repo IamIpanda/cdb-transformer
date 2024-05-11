@@ -192,17 +192,17 @@ pub fn read_string_conf<P: AsRef<Path>>(paths: &Vec<P>) {
 pub struct Xyyz;
 
 impl Xyyz {
-	fn format_level(this: &Card) -> String {
-		if this._type.contains(Type::Xyz) { format!("{}阶", this.level) }
-		else if this._type.contains(Type::Link) { format!("LINK-{}", this.link_marker.iter().count()) }
-		else { format!("{}星", this.level) }
-	}
+    fn format_level(this: &Card) -> String {
+        if this._type.contains(Type::Xyz) { format!("{}阶", this.level) }
+        else if this._type.contains(Type::Link) { format!("LINK-{}", this.link_marker.iter().count()) }
+        else { format!("{}星", this.level) }
+    }
 
-	fn set_level(card: &mut Card, str: &str) {
+    fn set_level(card: &mut Card, str: &str) {
         if str.ends_with("星") {
             card.level = str.trim_end_matches("星").trim().parse().unwrap()
         }
-		else if str.ends_with("阶") { 
+        else if str.ends_with("阶") { 
             card._type = card._type | Type::Xyz;
             card.level = str.trim_end_matches("阶").trim().parse().unwrap()
         }
@@ -213,51 +213,54 @@ impl Xyyz {
         else {
             panic!("Can't recognize level {}", str)
         }
-	}
+    }
 
-	fn format_number(num: i32) -> String {
-		if num == -2 { "?".to_string() }
-		else if num == -1 { "∞".to_string() }
-		else { num.to_string() }
-	}
+    fn format_number(num: i32) -> String {
+        if num == -2 { "?".to_string() }
+        else if num == -1 { "∞".to_string() }
+        else { num.to_string() }
+    }
 
-	fn get_num(str: &str) -> i32 {
-		if str == "?" { -2 }
-		else if str == "∞" { -1 }
-		else { str.parse().unwrap_or_default() }
-	}
+    fn get_num(str: &str) -> i32 {
+        if str == "?" { -2 }
+        else if str == "∞" { -1 }
+        else { str.parse().unwrap_or_default() }
+    }
 
-	fn format_setcode(this: &Card) -> Option<String> {
-		let setnames = SET_NAMES.get()?;
-		Some([this.setcode & 0xffff, (this.setcode & 0xffff0000) >> 16, (this.setcode & 0xffff00000000) >> 32, (this.setcode & 0xffff000000000000) >> 48]
-			.into_iter()
-			.filter(|set| *set > 0)
-			.map(|set| setnames.get(&(set as u16)))
-			.filter(|set| set.is_some())
-			.map(|set| set.unwrap().clone())
-			.collect::<Vec<_>>()
-			.join("、"))
-	}
+    fn format_setcode(this: &Card) -> Option<String> {
+        let setnames = SET_NAMES.get()?;
+        Some([this.setcode & 0xffff, (this.setcode & 0xffff0000) >> 16, (this.setcode & 0xffff00000000) >> 32, (this.setcode & 0xffff000000000000) >> 48]
+            .into_iter()
+            .filter(|set| *set > 0)
+            .map(|set| setnames.get(&(set as u16)).unwrap_or(&format!("0x{:X}", set)).clone())
+            .collect::<Vec<_>>()
+            .join("、"))
+    }
 
-	fn get_setcode(str: &str) -> u64 {
-		let setnames = match SET_NAMES.get() {
-			Some(s) => s,
-			None => return 0
-		};
-		
-  		let mut setcodes: u64 = 0;
-		for setname in str.split("、") {
+    fn get_setcode(str: &str) -> u64 {
+        let phantom = HashMap::new();
+        let setnames = match SET_NAMES.get() {
+            Some(s) => s,
+            None => &phantom
+        };
+        
+          let mut setcodes: u64 = 0;
+        for setname in str.split("、") {
             let setname = setname.trim();
-			let setcode = setnames.iter().find(|(_, v)| v == &&setname).map(|(k, _)| *k);
-			if let Some(setcode) = setcode {
-				setcodes = setcodes.checked_shl(16).unwrap() + setcode as u64;
-			}
-			else {
-				println!("Can't recoginize set {}", setname)
-			}
-		}
-		setcodes
-	}
+            let setcode = if setname.starts_with("0x") {
+                u16::from_str_radix(&setname[2..], 16).ok()
+            } else {
+                setnames.iter().find(|(_, v)| v == &&setname).map(|(k, _)| *k)
+            };
+            if let Some(s) = setcode {
+                setcodes = setcodes.checked_shl(16).unwrap() + s as u64;
+            }
+            else {
+                println!("Can't recoginize set {}", setname)
+            }
+        }
+        setcodes
+    }
 
     fn format_attribute(this: &Attribute) -> String {
         if this.is_empty() { return ATTRIBUTE_NAMES[&0].to_string() }
@@ -338,41 +341,41 @@ impl CardTransformer for Xyyz {
     fn to_string(card: &Card) -> String {
         let mut str = String::new();
         let alias_text = if card.alias > 0 { format!("=>{}", card.alias) } else { String::new() };
-		if card._type.contains(Type::Monster) {
-			str += &format!("{}({}{}) {} {} {}{} {} {}", 
-				card.name, 
-				card.code,
-				alias_text,
-				Self::format_attribute(&card.attribute), 
-				Self::format_level(card), 
-				Self::format_race(&card.race), 
-				Self::format_subtype(&card._type), 
-				Self::format_number(card.attack),
-				Self::format_number(card.defense));
+        if card._type.contains(Type::Monster) {
+            str += &format!("{}({}{}) {} {} {}{} {} {}", 
+                card.name, 
+                card.code,
+                alias_text,
+                Self::format_attribute(&card.attribute), 
+                Self::format_level(card), 
+                Self::format_race(&card.race), 
+                Self::format_subtype(&card._type), 
+                Self::format_number(card.attack),
+                Self::format_number(card.defense));
             if card._type.contains(Type::Link) {
                 str += " ";
                 str += &Self::format_linkmarkers(&card.link_marker)
             }
-		} else {
-			str += &format!("{}({}{}) {}", card.name, card.code, alias_text, Self::format_type(&card._type))
-		};
+        } else {
+            str += &format!("{}({}{}) {}", card.name, card.code, alias_text, Self::format_type(&card._type))
+        };
         if card.ot.bits() != (OT::OCG | OT::TCG).bits() {
             str += " (";
             str += &Self::format_ot(&card.ot);
             str += ")"
         }
         if let Some(setnames) = Self::format_setcode(card) {
-			if setnames.len() > 0 {
-				str += &format!("\n系列：{}", setnames);
-			}
-		}
-		str += &format!("\n{}", card.desc);
+            if setnames.len() > 0 {
+                str += &format!("\n系列：{}", setnames);
+            }
+        }
+        str += &format!("\n{}", card.desc);
         if ! card.category.is_empty() {
             str += &format!("\n效果分类：{}", Self::format_category(&card.category));
         }
-		if card.texts.len() > 0 {
-			str += &format!("\n提示文本：{}", card.texts.join("、"));
-		};
+        if card.texts.len() > 0 {
+            str += &format!("\n提示文本：{}", card.texts.join("、"));
+        };
         str
     }
 
@@ -483,17 +486,17 @@ fn read_string_conf_test() {
 #[test]
 fn test_format() {
     read_string_conf(&vec!["/Users/iami/Workshop/code/mycard/ygopro/strings.conf"]);
-	let cards = super::CDB::from_string("/Users/iami/Workshop/code/mycard/ygopro-database/locales/zh-CN/cards.cdb");
-	let s = cards.into_iter().map(|c| Xyyz::to_string(&c)).collect::<Vec<_>>().join("\n\n");
-	std::fs::write("/Users/iami/Workshop/code/mycard/cdb-transformer/test.log", s).unwrap();
+    let cards = super::CDB::from_string("/Users/iami/Workshop/code/mycard/ygopro-database/locales/zh-CN/cards.cdb");
+    let s = cards.into_iter().map(|c| Xyyz::to_string(&c)).collect::<Vec<_>>().join("\n\n");
+    std::fs::write("/Users/iami/Workshop/code/mycard/cdb-transformer/test.log", s).unwrap();
 } 
 
 #[test]
 fn test_parse() {
     read_string_conf(&vec!["/Users/iami/Workshop/code/mycard/ygopro/strings.conf"]);
-	let cards = std::fs::read_to_string("/Users/iami/Workshop/code/mycard/MyDIY/MyDIY.txt").unwrap();
-	let cc = Xyyz::from_string(&cards);
-	println!("{:?}", cc.len());
+    let cards = std::fs::read_to_string("/Users/iami/Workshop/code/mycard/MyDIY/MyDIY.txt").unwrap();
+    let cc = Xyyz::from_string(&cards);
+    println!("{:?}", cc.len());
     let s = cc.into_iter().map(|c| Xyyz::to_string(&c)).collect::<Vec<_>>().join("\n\n");
-	std::fs::write("/Users/iami/Workshop/code/mycard/cdb-transformer/test2.log", s).unwrap();
+    std::fs::write("/Users/iami/Workshop/code/mycard/cdb-transformer/test2.log", s).unwrap();
 }
