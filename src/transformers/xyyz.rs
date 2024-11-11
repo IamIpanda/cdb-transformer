@@ -1,13 +1,14 @@
- use std::collections::HashMap;
+use std::collections::HashMap;
 use std::ops::BitOr;
 use std::path::Path;
-use std::sync::OnceLock;
+use std::sync::{Arc, LazyLock};
 
+use arc_swap::ArcSwap;
 use bitflags::Flags;
-use phf::{phf_map, set};
+use phf::phf_map;
 use regex::Regex;
 
-use crate::card::{Card, CardTransformer};
+use crate::card::{Card, CardTransformer, PackInfo};
 use crate::constants::*;
 
 
@@ -19,10 +20,10 @@ INFO-JP000(QCSER)誇りと魂の龍(骄傲与灵魂之龙) 暗 8星 龙/特殊�
 实际采用的格式：
 骄傲与灵魂之龙(100000000) 暗 8星 龙/特殊召唤 2500 2500 (DIY)
 这张卡不能通常召唤。对方墓地有卡25张以上存在的场合才能特殊召唤。①：只要自己墓地有卡25张以上存在，这张卡的攻击力·守备力上升2500。
-提示文字：特殊召唤
+提示文本：特殊召唤
 */
 
-static ATTRIBUTE_NAMES: phf::Map<u32, &'static str> = phf_map! {
+pub static ATTRIBUTE_NAMES: phf::Map<u32, &'static str> = phf_map! {
     0u32 => "无",
     1u32 => "地",
     2u32 => "水",
@@ -33,7 +34,7 @@ static ATTRIBUTE_NAMES: phf::Map<u32, &'static str> = phf_map! {
     64u32 => "神"
 };
 
-static RACE_NAMES: phf::Map<u32, &'static str> = phf_map! {
+pub static RACE_NAMES: phf::Map<u32, &'static str> = phf_map! {
     0u32 => "无种族",
     1u32 => "战士",
     2u32 => "魔法使",
@@ -63,8 +64,8 @@ static RACE_NAMES: phf::Map<u32, &'static str> = phf_map! {
     33554432u32 => "幻想魔",
 };
 
-static TYPE_NAMES: phf::Map<u32, &'static str> = phf_map! {
-    0u32 => "通常",
+pub static TYPE_NAMES: phf::Map<u32, &'static str> = phf_map! {
+    // 0u32 => "通常",
     1u32 => "怪兽",
     2u32 => "魔法",
     4u32 => "陷阱",
@@ -92,19 +93,19 @@ static TYPE_NAMES: phf::Map<u32, &'static str> = phf_map! {
     67108864u32 => "连接",
 };
 
-static LINKMARKERS_NAMES: phf::Map<i32, &'static str> = phf_map! {
+pub static LINKMARKERS_NAMES: phf::Map<i32, &'static str> = phf_map! {
     1i32 => "↙",
     2i32 => "↓",
     4i32 => "↘",
     8i32 => "←",
     16i32 => "",
-    32i32 => "➡️",
+    32i32 => "→",
     64i32 => "↖",
     128i32 => "↑",
     256i32 => "↗"
 };
 
-static OT_NAMES: phf::Map<u32, &'static str> = phf_map! {
+pub static OT_NAMES: phf::Map<u32, &'static str> = phf_map! {
     1u32 => "OCG",
     2u32 => "TCG",
     3u32 => "OT",
@@ -114,7 +115,7 @@ static OT_NAMES: phf::Map<u32, &'static str> = phf_map! {
     1024u32 => "Draft"
 };
 
-static CATEGORY_NAMES: phf::Map<u64, &'static str> = phf_map! (
+pub static CATEGORY_NAMES: phf::Map<u64, &'static str> = phf_map! (
     0x1u64 => "魔陷破坏",
     0x2u64 => "怪兽破坏",
     0x4u64 => "卡片除外",
@@ -149,8 +150,8 @@ static CATEGORY_NAMES: phf::Map<u64, &'static str> = phf_map! (
     0x80000000u64 => "效果无效",
 );
 
-pub static SET_NAMES: OnceLock<HashMap<u16, String>> = OnceLock::new();
-
+pub static SET_NAMES: LazyLock<ArcSwap<HashMap<u16, String>>> = LazyLock::new(
+    || ArcSwap::new(Arc::new(HashMap::new())));
 
 
 fn search_in_phf_map<K: Copy>(m: &phf::Map<K,&'static str>, v: &str) -> Option<K> {
@@ -166,7 +167,7 @@ fn join_from_phf_map<'a, K: Copy+Flags+BitOr<Output = K>>(
         if let Some(b) = search_in_phf_map(m, s) {
             z = z | K::from_bits_truncate(b);
         } else {
-            panic!("Cannot recognize attribute {}", s)
+            println!("Cannot recognize attribute {}", s);
         }
     }
     z
@@ -176,23 +177,33 @@ pub fn read_string_conf<P: AsRef<Path>>(paths: &Vec<P>) {
     let mut setnames = HashMap::<u16, String>::new();
     for path in paths {
         let s = std::fs::read_to_string(path).unwrap();
-        for line in s.split("\n") {
-            if line.starts_with("!setname") {
-                let parts = line.trim().split(" ").collect::<Vec<_>>();
-                if let Ok(number) = u16::from_str_radix(parts[1].trim_start_matches("0x"), 16) {
-                    setnames.insert(number, parts[2].split("\t").next().unwrap().to_string());
-                }
+        add_string_conf_to_hashmap(&mut setnames, &s);
+    }
+    SET_NAMES.store(Arc::new(setnames));
+}
+
+pub fn set_string_conf(conf: impl AsRef<str>) {
+    let mut setnames = HashMap::new();
+    add_string_conf_to_hashmap(&mut setnames, conf);
+    SET_NAMES.store(Arc::new(setnames));
+}
+
+fn add_string_conf_to_hashmap(setnames: &mut HashMap<u16, String>, str: impl AsRef<str>) {
+    for line in str.as_ref().split("\n") {
+        if line.starts_with("!setname") {
+            let parts = line.trim().split(" ").collect::<Vec<_>>();
+            if let Ok(number) = u16::from_str_radix(parts[1].trim_start_matches("0x"), 16) {
+                setnames.insert(number, parts[2].split("\t").next().unwrap().to_string());
             }
         }
     }
-    SET_NAMES.set(setnames).unwrap()
 }
 
 
 pub struct Xyyz;
 
 impl Xyyz {
-    fn format_level(this: &Card) -> String {
+    pub fn format_level(this: &Card) -> String {
         if this._type.contains(Type::Xyz) { format!("{}阶", this.level) }
         else if this._type.contains(Type::Link) { format!("LINK-{}", this.link_marker.iter().count()) }
         else { format!("{}星", this.level) }
@@ -200,22 +211,22 @@ impl Xyyz {
 
     fn set_level(card: &mut Card, str: &str) {
         if str.ends_with("星") {
-            card.level = str.trim_end_matches("星").trim().parse().unwrap()
+            card.level = str.trim_end_matches("星").trim().parse().unwrap_or(0)
         }
         else if str.ends_with("阶") { 
             card._type = card._type | Type::Xyz;
-            card.level = str.trim_end_matches("阶").trim().parse().unwrap()
+            card.level = str.trim_end_matches("阶").trim().parse().unwrap_or(0)
         }
         else if str.starts_with("LINK-") {
             card._type = card._type | Type::Link;
-            card.level = str.trim_start_matches("LINK-").trim().parse().unwrap()
+            card.level = str.trim_start_matches("LINK-").trim().parse().unwrap_or(0)
         }
         else {
-            panic!("Can't recognize level {}", str)
+            println!("Can't recognize level {}", str)
         }
     }
 
-    fn format_number(num: i32) -> String {
+    pub fn format_number(num: i32) -> String {
         if num == -2 { "?".to_string() }
         else if num == -1 { "∞".to_string() }
         else { num.to_string() }
@@ -227,8 +238,8 @@ impl Xyyz {
         else { str.parse().unwrap_or_default() }
     }
 
-    fn format_setcode(this: &Card) -> Option<String> {
-        let setnames = SET_NAMES.get()?;
+    pub fn format_setcode(this: &Card) -> Option<String> {
+        let setnames = SET_NAMES.load();
         Some([this.setcode & 0xffff, (this.setcode & 0xffff0000) >> 16, (this.setcode & 0xffff00000000) >> 32, (this.setcode & 0xffff000000000000) >> 48]
             .into_iter()
             .filter(|set| *set > 0)
@@ -238,13 +249,9 @@ impl Xyyz {
     }
 
     fn get_setcode(str: &str) -> u64 {
-        let phantom = HashMap::new();
-        let setnames = match SET_NAMES.get() {
-            Some(s) => s,
-            None => &phantom
-        };
+        let setnames = SET_NAMES.load();
         
-          let mut setcodes: u64 = 0;
+        let mut setcodes: u64 = 0;
         for setname in str.split("、") {
             let setname = setname.trim();
             let setcode = if setname.starts_with("0x") {
@@ -256,13 +263,13 @@ impl Xyyz {
                 setcodes = setcodes.checked_shl(16).unwrap() + s as u64;
             }
             else {
-                println!("Can't recoginize set {}", setname)
+                println!("Can't recoginize set {}. ", setname)
             }
         }
         setcodes
     }
 
-    fn format_attribute(this: &Attribute) -> String {
+    pub fn format_attribute(this: &Attribute) -> String {
         if this.is_empty() { return ATTRIBUTE_NAMES[&0].to_string() }
         this.iter().map(|a| ATTRIBUTE_NAMES[&a.bits()]).collect::<Vec<_>>().join("/")
     }
@@ -271,7 +278,7 @@ impl Xyyz {
         join_from_phf_map(&ATTRIBUTE_NAMES, value.split("/"))
     }
 
-    fn format_race(this: &Race) -> String {
+    pub fn format_race(this: &Race) -> String {
         if this.is_empty() { return RACE_NAMES[&0].to_string() }
         this.iter().map(|a| RACE_NAMES[&a.bits()]).collect::<Vec<_>>().join("/")
     }
@@ -280,10 +287,10 @@ impl Xyyz {
         join_from_phf_map(&RACE_NAMES, value.split("/"))
     }
 
-    fn format_type(this: &Type) -> String {
+    pub fn format_type(this: &Type) -> String {
         if this.contains(Type::Monster) { }
-        if this.contains(Type::Spell) { return format!("{}{}", TYPE_NAMES[&(this.bits() - Type::Spell.bits())], TYPE_NAMES[&Type::Spell.bits()]) }
-        if this.contains(Type::Trap) { return format!("{}{}", TYPE_NAMES[&(this.bits() - Type::Trap.bits())], TYPE_NAMES[&Type::Trap.bits()]) }
+        if this.contains(Type::Spell) { return format!("{}{}", TYPE_NAMES.get(&(this.bits() - &Type::Spell.bits())).unwrap_or(&TYPE_NAMES[&Type::Normal.bits()]), TYPE_NAMES[&Type::Spell.bits()]) }
+        if this.contains(Type::Trap) { return format!("{}{}", TYPE_NAMES.get(&(this.bits() - &Type::Trap.bits())).unwrap_or(&TYPE_NAMES[&Type::Normal.bits()]), TYPE_NAMES[&Type::Trap.bits()]) }
         String::new()
     }
 
@@ -296,7 +303,7 @@ impl Xyyz {
         Type::from_bits_truncate(v)
     }
 
-    fn format_subtype(this: &Type) -> String {
+    pub fn format_subtype(this: &Type) -> String {
         let model_type = Type::Normal | Type::Fusion | Type::Ritual | Type::Synchro | Type::Xyz | Type::Pendulum | Type::Link | Type::Spsummon;
         let mut z1 = (*this & model_type).iter().map(|t| TYPE_NAMES[&t.bits()]).collect::<Vec<_>>();
         let sub_type = Type::Flip | Type::Token | Type::Spirit | Type::Union | Type::Toon | Type::Dual | Type::Tuner;
@@ -307,10 +314,12 @@ impl Xyyz {
     }
     
     fn get_subtype(value: &str) -> Type {
-        join_from_phf_map(&TYPE_NAMES, value.split("/").filter(|p| p.len() > 0))
+        let mut _type: Type = join_from_phf_map(&TYPE_NAMES, value.split("/").filter(|p| p.len() > 0));
+        if ! _type.intersects(Type::Token | Type::Normal) { _type = _type.union(Type::Effect) }
+        _type
     }
 
-    fn format_linkmarkers(this: &Linkmarkers) -> String {
+    pub fn format_linkmarkers(this: &Linkmarkers) -> String {
         format!("[{}]", this.iter().map(|a| LINKMARKERS_NAMES[&a.bits()]).collect::<Vec<_>>().join("]["))
     }
 
@@ -318,7 +327,7 @@ impl Xyyz {
         join_from_phf_map(&LINKMARKERS_NAMES, value[1..value.len()-1].split("]["))
     }
 
-    fn format_ot(this: &OT) -> String {
+    pub fn format_ot(this: &OT) -> String {
         if this.bits() == (OT::OCG | OT::TCG).bits() { return String::new() }
         if let Some(s) = OT_NAMES.get(&this.bits()) { return s.to_string(); }
         this.iter().map(|a| OT_NAMES[&a.bits()]).collect::<Vec<_>>().join("&")
@@ -328,7 +337,7 @@ impl Xyyz {
         join_from_phf_map(&OT_NAMES, value.split("&").map(|v| v.trim()))
     }
 
-    fn format_category(this: &Category) -> String {
+    pub fn format_category(this: &Category) -> String {
         this.iter().map(|c| CATEGORY_NAMES[&c.bits()]).collect::<Vec<_>>().join("、")
     }
 
@@ -351,9 +360,9 @@ impl CardTransformer for Xyyz {
                 Self::format_race(&card.race), 
                 Self::format_subtype(&card._type), 
                 Self::format_number(card.attack),
-                Self::format_number(card.defense));
+                if card._type.contains(Type::Link) { String::new() } else { Self::format_number(card.defense) }
+            );
             if card._type.contains(Type::Link) {
-                str += " ";
                 str += &Self::format_linkmarkers(&card.link_marker)
             }
         } else {
@@ -382,20 +391,30 @@ impl CardTransformer for Xyyz {
     fn from_string(str: &str) -> Vec<Card> {
         let mut cards = Vec::new();
         let mut current_card: Option<Card> = None;
-        let line_regex = Regex::new(r"^(.+)\((\d+)(\s*=>\s*(\d+)\s*)?\)\s+(.+?)\s*(\((.+)\))?$").unwrap();
-        let parts_regex = Regex::new(r"(.) (.+) (.+?)(/.+)* (\d+|\?|∞) (\d+|\?|∞)\s*(\[.+\])?").unwrap();
+        let mut current_index = 0;
+        let line_regex = Regex::new(r"^(\[.+\-.+\]\s+)?(.+)\((\d+)(\s*=>\s*(\d+)\s*)?\)\s+(.+?)\s*(\((.+)\))?$").unwrap();
+        let parts_regex = Regex::new(r"(.) (.+) (.+?)(/.+)* (\d+|\?|∞) (\d+|\?|∞|(\[.+\]))").unwrap();
         let pendulum_regex: Regex = Regex::new(r"^←(\d+)\s*【灵摆】\s*(\d+)→$").unwrap();
         for line in str.split("\n") {
-            if line.starts_with("#") { continue; }
-            if line.trim().len() == 0 { continue; }
+            let current_line_length = line.chars().count() + 1;
+            if line.starts_with("#") { current_index += current_line_length; continue; }
+            if line.trim().len() == 0 {
+                if let Some(card) = current_card.as_mut() {
+                    if let Some(range) = card.range.as_mut() {
+                        range.end = current_index;
+                    }
+                }
+                current_index += current_line_length;
+                continue; 
+            }
             if let Some(groups) = line_regex.captures(line) {
-                let name = groups.get(1).unwrap().as_str().to_string();
-                let code: u32 = groups.get(2).unwrap().as_str().parse().unwrap();
+                let name = groups.get(2).unwrap().as_str().to_string();
+                let code: u32 = groups.get(3).unwrap().as_str().parse().unwrap_or_default();
                 let mut card = Card {
                     code,
                     name,
                     desc: String::new(),
-                    alias: if let Some(u) = groups.get(4) { u.as_str().parse().unwrap() } else { 0 },
+                    alias: if let Some(u) = groups.get(5) { u.as_str().parse().unwrap() } else { 0 },
                     setcode: 0,
                     _type: Type::empty(),
                     level: 0,
@@ -409,10 +428,11 @@ impl CardTransformer for Xyyz {
                     ot: OT::OCG | OT::TCG,
                     category: Category::empty(),
                     texts: Vec::new(),
-                    pack: None,
+                    pack: groups.get(1).map(|u| PackInfo { id: code, pack_id: u.as_str()[1..u.as_str().len()-1].to_string(), pack: String::new(), rarity: vec![], date: String::new() }),
+                    range: Some((current_index..current_index).into())
                 };
-                let part_str = groups.get(5).unwrap().as_str();
-                if let Some(ot) = groups.get(7) {
+                let part_str = groups.get(6).unwrap().as_str();
+                if let Some(ot) = groups.get(8) {
                     card.ot = Self::get_ot(ot.as_str());
                 }
                 if let Some(parts) = parts_regex.captures(part_str) {
@@ -439,7 +459,7 @@ impl CardTransformer for Xyyz {
                 else { 
                     card._type = card._type | Self::get_type(part_str); 
                 }
-                if let Some(card) = current_card { cards.push(card); }
+                if let Some(mut card) = current_card { set_card_range(&mut card, current_index-1); cards.push(card); }
                 current_card = Some(card);
             }
             else if let Some(c) = current_card.as_mut() {
@@ -468,14 +488,24 @@ impl CardTransformer for Xyyz {
                     c.desc.extend(line.chars()); 
                 }
             }
+            current_index += current_line_length; 
         }
-        if let Some(card) = current_card { cards.push(card) }
+        if let Some(mut card) = current_card {
+            set_card_range(&mut card, str.len());
+            cards.push(card) 
+        }
         println!("Parsed {} cards.", cards.len());
         cards
     }
 }
 
-
+fn set_card_range(card: &mut Card, end: usize) {
+    if let Some(range) = card.range.as_mut() {
+        if range.start >= range.end {
+            range.end = end;
+        }
+    }
+}
 
 #[test]
 fn read_string_conf_test() {
@@ -499,4 +529,25 @@ fn test_parse() {
     println!("{:?}", cc.len());
     let s = cc.into_iter().map(|c| Xyyz::to_string(&c)).collect::<Vec<_>>().join("\n\n");
     std::fs::write("/Users/iami/Workshop/code/mycard/cdb-transformer/test2.log", s).unwrap();
+}
+
+#[test]
+fn test_parse_text() {
+    let text = "
+日食爆龙(172017203) 暗 LINK-2 龙/连接 1600 [↓][↘] (Custom)
+光属性龙族怪兽+暗属性龙族怪兽
+①：这张卡连接召唤成功时发动。这张卡以外的场上的怪兽的攻击力只要这张卡在场上表侧表示变成0。为这个效果下降的攻击力每有500，把1个「燃料指示物」在这张卡上放置。
+②：1回合1次，把这张卡上1个「燃料指示物」取除才能发动。从卡组选光·暗属性龙族怪兽各1只除外。这个效果发动的回合，自己不能把龙族怪兽以外的怪兽效果发动。
+③：龙族怪兽的效果发动时，把这张卡解放才能发动。为这张卡连接召唤的那一组素材在墓地集齐的场合，把那些怪兽在自己场上特殊召唤。那之后，可以把这张卡放置过的「燃料指示物」数量的「燃料指示物」在自己场上1只「主宰龙 无穷烈日」上放置。
+
+#这是一行注释
+S.A.R.A.(172016020) 无 3星 龙/调整 0 1800 (Custom)
+这张卡的属性是最后召唤·特殊召唤·反转召唤的怪兽的属性。
+①：对方的主要阶段，把手卡的这张卡送去墓地才能发动。从卡组选1张和这张卡属性相同的攻0/防1800的调整怪兽加入手卡。这个效果发动的回合，这张卡是公开表示的场合，自己不是与这张卡属性相同的怪兽的效果不能发动。
+
+原质阿尔法(114514269) 暗 3星 恶魔/通常 1000 1000 (Custom)
+系列：原质炉
+起点之果。";
+    let cc = Xyyz::from_string(text);
+    println!("{:?}", cc)
 }

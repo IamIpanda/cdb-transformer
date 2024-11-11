@@ -1,15 +1,15 @@
 use crate::{card::CardTransformer, constants::Type};
 
-use super::{CDB, STR_FIELD_NAMES};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::transformers::CDB;
 
 pub struct SQL;
 
+pub const STR_FIELD_NAMES: [&str; 16] = ["str1","str2","str3","str4","str5","str6","str7","str8","str9","str10","str11","str12","str13","str14","str15","str16"];
 pub const CREATE_TABLE_SQL: &str = "
 CREATE TABLE IF NOT EXISTS datas(id integer primary key,ot integer,alias integer,setcode integer,type integer,atk integer,def integer,level integer,race integer,attribute integer,category integer);
 CREATE TABLE IF NOT EXISTS texts(id integer primary key,name text,desc text,str1 text,str2 text,str3 text,str4 text,str5 text,str6 text,str7 text,str8 text,str9 text,str10 text,str11 text,str12 text,str13 text,str14 text,str15 text,str16 text);
 ";
-
-
 
 impl CardTransformer for SQL {
     fn to_string(card: &crate::card::Card) -> String {
@@ -26,15 +26,20 @@ impl CardTransformer for SQL {
     }
 
     fn from_string(str: &str) -> Vec<crate::card::Card> {
-        let connection = sqlite::open(":memory:").expect("Cannot open sqlite memory instance");
-        connection.execute(CREATE_TABLE_SQL).expect("create table failed");
-        // for (n,line) in str.split("\n").into_iter().enumerate() {
-        //     if let Err(e) = connection.execute(line) {
-        //         println!("Failed to execute on line {} '{}': {}", n, line, e)
-        //     }
-        // }
-        connection.execute(str).expect("execute sql failed");
-        CDB::from_connection(connection)
+        #[cfg(target_arch = "wasm32")]
+        unimplemented!("Sqlite is disabled.");
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let connection = sqlite::open(":memory:").expect("Cannot open sqlite memory instance");
+            connection.execute(CREATE_TABLE_SQL).expect("create table failed");
+            // for (n,line) in str.split("\n").into_iter().enumerate() {
+            //     if let Err(e) = connection.execute(line) {
+            //         println!("Failed to execute on line {} '{}': {}", n, line, e)
+            //     }
+            // }
+            connection.execute(str).expect("execute sql failed");
+            CDB::from_connection(connection)
+        }
     }
 }
 

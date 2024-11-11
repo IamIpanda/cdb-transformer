@@ -5,9 +5,7 @@ use sqlite::Connection;
 use crate::card::{Card, CardTransformer};
 use crate::constants::*;
 
-use super::{CREATE_TABLE_SQL, SQL};
-
-pub const STR_FIELD_NAMES: [&str; 16] = ["str1","str2","str3","str4","str5","str6","str7","str8","str9","str10","str11","str12","str13","str14","str15","str16"];
+use crate::transformers::{CREATE_TABLE_SQL, SQL, STR_FIELD_NAMES};
 
 pub struct CDB;
 
@@ -48,6 +46,7 @@ impl CDB {
                 category: Category::from_bits_truncate((h.get(&&"category").unwrap().parse::<i64>().unwrap() as u64).wrapping_add(u64::MAX/2+1)),
                 texts: Vec::new(),
                 pack: None,
+                range: None
             };
             if card._type.contains(Type::Monster) {
                 card.level = h.get(&&"level").unwrap().parse().unwrap();

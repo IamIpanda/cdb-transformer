@@ -1,7 +1,12 @@
 use bitflags::bitflags;
+use clap::ValueEnum;
+use serde::{Deserialize, Serialize};
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::wasm_bindgen;
 
 bitflags! {
-    #[derive(Clone, Copy, Debug)]
+    #[repr(C)]
+    #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
     pub struct Attribute: u32 {
         const Earth = 1;
         const Water = 2;
@@ -14,7 +19,7 @@ bitflags! {
 }
 
 bitflags! {
-    #[derive(Clone, Copy, Debug)]
+    #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
     pub struct OT: u32 {
         const OCG = 1;
         const TCG = 2;
@@ -26,7 +31,7 @@ bitflags! {
 }
 
 bitflags! {
-    #[derive(Clone, Copy, Debug)]
+    #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
     pub struct Race: u32 {
         const Warrior = 1;
         const Spellcaster = 2;
@@ -53,11 +58,12 @@ bitflags! {
         const Creatorgod = 4194304;
         const Wyrm = 8388608;
         const Cybers = 16777216;
+        const Illusion = 33554432;
     }
 }
 
 bitflags! {
-    #[derive(Clone, Copy, Debug)]
+    #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
     pub struct Type: u32 {
         const Monster = 1;
         const Spell = 2;
@@ -88,7 +94,7 @@ bitflags! {
 }
 
 bitflags! {
-    #[derive(Clone, Copy, Debug)]
+    #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
     pub struct Linkmarkers: i32 {
         const BottomLeft = 1;
         const Bottom = 2;
@@ -102,7 +108,7 @@ bitflags! {
 }
 
 bitflags! {
-    #[derive(Clone, Copy, Debug)]
+    #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
     pub struct Category: u64 {
         const category1 = 0x1;
         const category2 = 0x2;
@@ -136,5 +142,27 @@ bitflags! {
         const category30 = 0x20000000;
         const category31 = 0x40000000;
         const category32 = 0x80000000;
+    }
+}
+
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+#[derive(ValueEnum, Clone, Copy, Debug, Serialize, Deserialize)]
+pub enum Format {
+    Xyyz,
+    CDB,
+    SQL,
+    Script,
+    Unknown
+}
+
+impl ToString for Format {
+    fn to_string(&self) -> String {
+        match self {
+            Format::Xyyz => "xyyz",
+            Format::CDB => "cdb",
+            Format::SQL => "sql",
+            Format::Script => "script",
+            Format::Unknown => "unknown"
+        }.to_string()
     }
 }
