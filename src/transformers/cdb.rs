@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::fmt::Debug;
+use std::str::FromStr;
 
 use sqlite::Connection;
 
@@ -28,12 +30,12 @@ impl CDB {
                 }
             };
             let mut card = Card {
-                code: h.get(&&"id").unwrap().parse().unwrap(),
-                name: h.get(&&"name").unwrap().to_string(),
-                desc: h.get(&&"desc").unwrap().to_string(),
-                alias: h.get(&&"alias").unwrap().parse().unwrap_or_default(),
-                setcode: h.get(&&"setcode").unwrap().parse().unwrap(),
-                _type: Type::from_bits_retain(h.get(&&"type").unwrap().parse::<u32>().unwrap()),
+                code: get(&h, "id"),
+                name: get(&h, "name"),
+                desc: get(&h, "desc"),
+                alias: get(&h, "alias"),
+                setcode: get(&h, "setcode"),
+                _type: Type::from_bits_retain(get(&h, "type")),
                 level: 0,
                 attribute: Attribute::empty(),
                 race: Race::empty(),
@@ -42,18 +44,18 @@ impl CDB {
                 lscale: 0,
                 rscale: 0,
                 link_marker: Linkmarkers::empty(),
-                ot: OT::from_bits_retain(h.get(&&"ot").unwrap().parse().unwrap()),
-                category: Category::from_bits_truncate((h.get(&&"category").unwrap().parse::<i64>().unwrap() as u64).wrapping_add(u64::MAX/2+1)),
+                ot: OT::from_bits_retain(get(&h, "ot")),
+                category: Category::from_bits_truncate(get(&h, "category")),
                 texts: Vec::new(),
                 pack: None,
                 range: None
             };
             if card._type.contains(Type::Monster) {
-                card.level = h.get(&&"level").unwrap().parse().unwrap();
-                card.attribute = Attribute::from_bits_retain(h.get(&&"attribute").unwrap().parse().unwrap());
-                card.race = Race::from_bits_retain(h.get(&&"race").unwrap().parse().unwrap());
-                card.attack = h.get(&&"atk").unwrap().parse().unwrap();
-                card.defense = h.get(&&"def").unwrap().parse().unwrap();
+                card.level = get(&h, "level");
+                card.attribute = Attribute::from_bits_retain(get(&h, "attribute"));
+                card.race = Race::from_bits_retain(get(&h, "race"));
+                card.attack = get(&h, "atk");
+                card.defense = get(&h, "def");
             }
             if card._type.contains(Type::Link) {
                 card.link_marker = Linkmarkers::from_bits_retain(card.defense);
@@ -88,3 +90,18 @@ impl CardTransformer for CDB {
         CDB::from_connection(sqlite::open(from).expect("Cannot open sqlite file"))
     }
 }
+
+trait Get<S> {
+    fn get(obj: &S, key: &str) -> Self;
+}
+
+fn get<S, T>(obj: &S, key: &str) -> T where T: Get<S> {
+    T::get(obj, key)
+}
+
+impl<S> Get<HashMap<&&str, &&str>> for S where S: FromStr, <S as FromStr>::Err: Debug {
+    fn get(obj: &HashMap<&&str, &&str>, key: &str) -> S {
+        obj.get(&key).unwrap().parse().unwrap()
+    }
+}
+

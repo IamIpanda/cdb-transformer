@@ -71,7 +71,7 @@ pub fn set_names() -> wasm_bindgen::JsValue {
 }
 
 #[cfg(target_arch="wasm32")]
-#[wasm_bindgen(raw_module="./cdb")]
+#[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen]
     pub type Database;

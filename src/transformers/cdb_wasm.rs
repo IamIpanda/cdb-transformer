@@ -41,7 +41,7 @@ impl CDB {
                 card.attack = get(&h, "atk");
                 card.defense = get(&h, "def");
             }
-        if card._type.contains(Type::Link) {
+            if card._type.contains(Type::Link) {
                 card.link_marker = Linkmarkers::from_bits_retain(card.defense);
                 card.defense = card.level as i32;
             }

@@ -92,6 +92,9 @@ pub static TYPE_NAMES: phf::Map<u32, &'static str> = phf_map! {
     33554432u32 => "特殊召唤",
     67108864u32 => "连接",
 };
+static EX_NONEFFECT_TYPE_NAME: phf::Map<u32, &'static str> = phf_map! {
+    16u32 => "非效果"
+};
 
 pub static LINKMARKERS_NAMES: phf::Map<i32, &'static str> = phf_map! {
     1i32 => "↙",
@@ -165,6 +168,24 @@ fn join_from_phf_map<'a, K: Copy+Flags+BitOr<Output = K>>(
     let mut z = K::empty();
     for s in i {
         if let Some(b) = search_in_phf_map(m, s) {
+            z = z | K::from_bits_truncate(b);
+        } else {
+            println!("Cannot recognize attribute {}", s);
+        }
+    }
+    z
+}
+
+fn join_from_phf_map_dual<'a, K: Copy+Flags+BitOr<Output = K>>(
+    m: &phf::Map<<K as Flags>::Bits,&'static str>,
+    n: &phf::Map<<K as Flags>::Bits,&'static str>,  
+    i: impl Iterator<Item = &'a str>
+) -> K {
+    let mut z = K::empty();
+    for s in i {
+        if let Some(b) = search_in_phf_map(m, s) {
+            z = z | K::from_bits_truncate(b);
+        } else if let Some(b) = search_in_phf_map(n, s) {
             z = z | K::from_bits_truncate(b);
         } else {
             println!("Cannot recognize attribute {}", s);
@@ -298,32 +319,44 @@ impl Xyyz {
         let mut v = 0;
         let leading_length = TYPE_NAMES[&Type::Normal.bits()].len();
         let all_length = leading_length + TYPE_NAMES[&Type::Monster.bits()].len();
-        if str.len() >= leading_length { v = v + search_in_phf_map(&TYPE_NAMES, &str[0..leading_length]).unwrap_or_default(); }
-        if str.len() == all_length     { v = v + search_in_phf_map(&TYPE_NAMES, &str[leading_length..] ).unwrap_or_default(); }
+        if str.len() >= leading_length && str.is_char_boundary(leading_length) { v = v + search_in_phf_map(&TYPE_NAMES, &str[0..leading_length]).unwrap_or_default(); }
+        if str.len() == all_length     && str.is_char_boundary(leading_length) { v = v + search_in_phf_map(&TYPE_NAMES, &str[leading_length..] ).unwrap_or_default(); }
+        v = v & !(Type::Normal.bits());
         Type::from_bits_truncate(v)
     }
 
     pub fn format_subtype(this: &Type) -> String {
         let model_type = Type::Normal | Type::Fusion | Type::Ritual | Type::Synchro | Type::Xyz | Type::Pendulum | Type::Link | Type::Spsummon;
-        let mut z1 = (*this & model_type).iter().map(|t| TYPE_NAMES[&t.bits()]).collect::<Vec<_>>();
+        let ex_type = Type::Fusion | Type::Ritual | Type::Xyz | Type::Synchro | Type::Link;
+        let mut this_intersected = this.intersection(model_type);         // Ex monster should contains 'Normal' type.
+        if this.intersects(ex_type) { this_intersected.remove(Type::Normal); }  // But we still remove it for external sources.
+        let mut z1 = this_intersected.iter().map(|t| TYPE_NAMES[&t.bits()]).collect::<Vec<_>>();
+        if this.intersects(ex_type) && !this.contains(Type::Effect) { z1.push(EX_NONEFFECT_TYPE_NAME[&16]); } // Add 'non-effect' label for ex monsters.
+        
         let sub_type = Type::Flip | Type::Token | Type::Spirit | Type::Union | Type::Toon | Type::Dual | Type::Tuner;
-        let z2 = (*this & sub_type).iter().map(|t| TYPE_NAMES[&t.bits()]).collect::<Vec<_>>();
+        let z2 = this.intersection(sub_type).iter().map(|t| TYPE_NAMES[&t.bits()]).collect::<Vec<_>>();
         z1.extend(z2);
         if z1.len() == 0 { String::new() }
         else { format!("/{}", z1.join("/")) }
     }
     
     fn get_subtype(value: &str) -> Type {
-        let mut _type: Type = join_from_phf_map(&TYPE_NAMES, value.split("/").filter(|p| p.len() > 0));
-        if ! _type.intersects(Type::Token | Type::Normal) { _type = _type.union(Type::Effect) }
+        let mut _type: Type = join_from_phf_map_dual(&EX_NONEFFECT_TYPE_NAME, &TYPE_NAMES, value.split("/").filter(|p| p.len() > 0));
+        if _type.intersects(Type::Fusion | Type::Ritual | Type::Xyz | Type::Synchro | Type::Link) {
+            if _type.contains(Type::Normal) { _type.remove(Type::Normal); }
+            else { _type = _type.union(Type::Effect) }
+        }
+        else if ! _type.intersects(Type::Token | Type::Normal) { _type = _type.union(Type::Effect) }
         _type
     }
 
     pub fn format_linkmarkers(this: &Linkmarkers) -> String {
+        if this.is_empty() { return String::new() }
         format!("[{}]", this.iter().map(|a| LINKMARKERS_NAMES[&a.bits()]).collect::<Vec<_>>().join("]["))
     }
 
     fn get_linkmarkers(value: &str) -> Linkmarkers {
+        if value.is_empty() { return Linkmarkers::empty() }
         join_from_phf_map(&LINKMARKERS_NAMES, value[1..value.len()-1].split("]["))
     }
 
@@ -392,8 +425,8 @@ impl CardTransformer for Xyyz {
         let mut cards = Vec::new();
         let mut current_card: Option<Card> = None;
         let mut current_index = 0;
-        let line_regex = Regex::new(r"^(\[.+\-.+\]\s+)?(.+)\((\d+)(\s*=>\s*(\d+)\s*)?\)\s+(.+?)\s*(\((.+)\))?$").unwrap();
-        let parts_regex = Regex::new(r"(.) (.+) (.+?)(/.+)* (\d+|\?|∞) (\d+|\?|∞|(\[.+\]))").unwrap();
+        let line_regex = Regex::new(r"^(\[.+\-.+\]\s+)?(.+)\((\d+)(\s*=>\s*(\d+)\s*)?\)\s+(.+?)\s*(\((.*)\))?$").unwrap();
+        let parts_regex = Regex::new(r"^(.+?) (.+?) (.+?)((?:/.+?)*) (\d+|\?|∞) ?(\d+|\?|∞|(\[.+\])?)$").unwrap();
         let pendulum_regex: Regex = Regex::new(r"^←(\d+)\s*【灵摆】\s*(\d+)→$").unwrap();
         for line in str.split("\n") {
             let current_line_length = line.chars().count() + 1;
@@ -534,6 +567,9 @@ fn test_parse() {
 #[test]
 fn test_parse_text() {
     let text = "
+游戏王九项修改器(65123333) 地/水/炎/风/光/暗 LINK-0 创世神/连接 0  (Custom)
+——————第一页——————
+
 日食爆龙(172017203) 暗 LINK-2 龙/连接 1600 [↓][↘] (Custom)
 光属性龙族怪兽+暗属性龙族怪兽
 ①：这张卡连接召唤成功时发动。这张卡以外的场上的怪兽的攻击力只要这张卡在场上表侧表示变成0。为这个效果下降的攻击力每有500，把1个「燃料指示物」在这张卡上放置。
@@ -547,7 +583,10 @@ S.A.R.A.(172016020) 无 3星 龙/调整 0 1800 (Custom)
 
 原质阿尔法(114514269) 暗 3星 恶魔/通常 1000 1000 (Custom)
 系列：原质炉
-起点之果。";
+起点之果。
+
+青眼白龙(89631141=>89631139) 通常魔法
+以高攻击力著称的传说之龙。任何对手都能粉碎，其破坏力不可估量。";
     let cc = Xyyz::from_string(text);
-    println!("{:?}", cc)
+    println!("{:?}", cc[4])
 }
