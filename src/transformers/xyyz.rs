@@ -153,9 +153,17 @@ pub static CATEGORY_NAMES: phf::Map<u64, &'static str> = phf_map! (
     0x80000000u64 => "效果无效",
 );
 
+pub static SPECIAL_NUMBERS: phf::Map<i32, &'static str> = phf_map! {
+    -2i32 => "?",
+    -1i32 => "∞"
+};
+
 pub static SET_NAMES: LazyLock<ArcSwap<HashMap<u16, String>>> = LazyLock::new(
     || ArcSwap::new(Arc::new(HashMap::new())));
 
+static ATTRIBUTE_SEARCH_MAPPINGS: LazyLock<Vec<String>> = LazyLock::new(|| {
+    return ATTRIBUTE_NAMES.values().map(|name| " ".to_string() + name).collect()
+});
 
 fn search_in_phf_map<K: Copy>(m: &phf::Map<K,&'static str>, v: &str) -> Option<K> {
     m.entries().find(|(_, vv)| &&v == vv).map(|(k, _)| k.clone())
@@ -248,15 +256,20 @@ impl Xyyz {
     }
 
     pub fn format_number(num: i32) -> String {
-        if num == -2 { "?".to_string() }
-        else if num == -1 { "∞".to_string() }
-        else { num.to_string() }
+        if let Some(s) = SPECIAL_NUMBERS.get(&num) {
+            return s.to_string()
+        } else {
+            return num.to_string()
+        }
     }
 
     fn get_num(str: &str) -> i32 {
-        if str == "?" { -2 }
-        else if str == "∞" { -1 }
-        else { str.parse().unwrap_or_default() }
+        for (num, s) in SPECIAL_NUMBERS.entries() {
+            if str == *s {
+                return *num;
+            }
+        }
+        return str.parse().unwrap_or_default()
     }
 
     pub fn format_setcode(this: &Card) -> Option<String> {
@@ -377,7 +390,37 @@ impl Xyyz {
     fn get_category(value: &str) -> Category {
         join_from_phf_map(&CATEGORY_NAMES, value.split("、").map(|v| v.trim()))
     }
+
+    fn read_part_str(part_str: &str, card: &mut Card) {
+        if let Some(parts) = PARTS_REGEX.captures(part_str) {
+            let attr_str = parts.get(1).unwrap();
+            let level_str = parts.get(2).unwrap();
+            let race_str = parts.get(3).unwrap();
+            let type_str = parts.get(4).map(|t| t.as_str()).unwrap_or("");
+            let atk_str = parts.get(5).unwrap();
+            let def_str = parts.get(6).unwrap();
+            let linkmarker_str = parts.get(7);
+
+            card.attribute = Self::get_attribute(attr_str.as_str());
+            Self::set_level(card, level_str.as_str());
+            card.race = Self::get_race(race_str.as_str().into());
+            card._type = Self::get_subtype(type_str) | Type::Monster;
+            card.attack = Self::get_num(atk_str.as_str());
+            card.defense = Self::get_num(def_str.as_str());
+            if let Some(marker) = linkmarker_str {
+                card._type = card._type | Type::Link;
+                card.link_marker = Self::get_linkmarkers(marker.as_str());
+                card.defense = card.link_marker.bits();
+            }
+        }
+        else { 
+            card._type = card._type | Self::get_type(part_str); 
+        }
+    }
+
 }
+
+static PARTS_REGEX: LazyLock<Regex> = LazyLock::new(|| { Regex::new(r"^(.+?) (.+?) (.+?)((?:/.+?)*) (\d+|\?|∞) ?(\d+|\?|∞|(\[.+\])?)$").unwrap() });
 
 impl CardTransformer for Xyyz {
     fn to_string(card: &Card) -> String {
@@ -426,6 +469,7 @@ impl CardTransformer for Xyyz {
         let mut current_card: Option<Card> = None;
         let mut current_index = 0;
         let line_regex = Regex::new(r"^(\[.+\-.+\]\s+)?(.+)\((\d+)(\s*=>\s*(\d+)\s*)?\)\s+(.+?)\s*(\((.*)\))?$").unwrap();
+        let line_weak_regex = Regex::new(r"^(\[.+\-.+\]\s+)?(.+?)(\S+魔法|\S+陷阱|(\d+|∞|\?))\s*(\((.*)\))?$").unwrap();
         let parts_regex = Regex::new(r"^(.+?) (.+?) (.+?)((?:/.+?)*) (\d+|\?|∞) ?(\d+|\?|∞|(\[.+\])?)$").unwrap();
         let pendulum_regex: Regex = Regex::new(r"^←(\d+)\s*【灵摆】\s*(\d+)→$").unwrap();
         for line in str.split("\n") {
@@ -440,59 +484,51 @@ impl CardTransformer for Xyyz {
                 current_index += current_line_length;
                 continue; 
             }
+            
+            let mut new_card = None;
             if let Some(groups) = line_regex.captures(line) {
-                let name = groups.get(2).unwrap().as_str().to_string();
                 let code: u32 = groups.get(3).unwrap().as_str().parse().unwrap_or_default();
-                let mut card = Card {
-                    code,
-                    name,
-                    desc: String::new(),
-                    alias: if let Some(u) = groups.get(5) { u.as_str().parse().unwrap() } else { 0 },
-                    setcode: 0,
-                    _type: Type::empty(),
-                    level: 0,
-                    attribute: Attribute::empty(),
-                    race: Race::empty(),
-                    attack: 0,
-                    defense: 0,
-                    lscale: 0,
-                    rscale: 0,
-                    link_marker: Linkmarkers::empty(),
-                    ot: OT::OCG | OT::TCG,
-                    category: Category::empty(),
-                    texts: Vec::new(),
-                    pack: groups.get(1).map(|u| PackInfo { id: code, pack_id: u.as_str()[1..u.as_str().len()-1].to_string(), pack: String::new(), rarity: vec![], date: String::new() }),
-                    range: Some((current_index..current_index).into())
-                };
-                let part_str = groups.get(6).unwrap().as_str();
+                let mut card = Card::new();
+                card.code = code;
+                card.pack = groups.get(1).map(|u| PackInfo { id: code, pack_id: u.as_str()[1..u.as_str().len()-1].to_string(), pack: String::new(), rarity: vec![], date: String::new() });
+                card.name = groups.get(2).unwrap().as_str().to_string();
+                if let Some(u) = groups.get(5) { 
+                    card.alias = u.as_str().parse().unwrap() 
+                }
+                card.range = Some((current_index..current_index).into()); 
                 if let Some(ot) = groups.get(8) {
                     card.ot = Self::get_ot(ot.as_str());
                 }
-                if let Some(parts) = parts_regex.captures(part_str) {
-                    let attr_str = parts.get(1).unwrap();
-                    let level_str = parts.get(2).unwrap();
-                    let race_str = parts.get(3).unwrap();
-                    let type_str = parts.get(4).map(|t| t.as_str()).unwrap_or("");
-                    let atk_str = parts.get(5).unwrap();
-                    let def_str = parts.get(6).unwrap();
-                    let linkmarker_str = parts.get(7);
-
-                    card.attribute = Self::get_attribute(attr_str.as_str());
-                    Self::set_level(&mut card, level_str.as_str());
-                    card.race = Self::get_race(race_str.as_str().into());
-                    card._type = Self::get_subtype(type_str) | Type::Monster;
-                    card.attack = Self::get_num(atk_str.as_str());
-                    card.defense = Self::get_num(def_str.as_str());
-                    if let Some(marker) = linkmarker_str {
-                        card._type = card._type | Type::Link;
-                        card.link_marker = Self::get_linkmarkers(marker.as_str());
-                        card.defense = card.link_marker.bits();
-                    }
+                let part_str = groups.get(6).unwrap().as_str();
+                Xyyz::read_part_str(part_str, &mut card);
+                new_card = Some(card)
+            }
+            else if let Some(groups) = line_weak_regex.captures(line) {
+                let mix_str = groups.get(2).unwrap().as_str();
+                let mut pos = None;
+                for attribute_name in ATTRIBUTE_SEARCH_MAPPINGS.iter() {
+                    pos = mix_str.find(attribute_name);
+                    if pos.is_some() { break; }
                 }
-                else { 
-                    card._type = card._type | Self::get_type(part_str); 
+                if pos == None { pos = mix_str.find(" ") }
+                let pos = match pos {
+                    Some(pos) => pos,
+                    None => 0
+                };
+                let mut card = Card::new();
+                card.pack = groups.get(1).map(|u| PackInfo { id: 0, pack_id: u.as_str()[1..u.as_str().len()-1].to_string(), pack: String::new(), rarity: vec![], date: String::new() });
+                card.name = mix_str[0..pos].to_string();
+                if let Some(ot) = groups.get(6) {
+                    card.ot = Self::get_ot(ot.as_str());
                 }
-                if let Some(mut card) = current_card { set_card_range(&mut card, current_index-1); cards.push(card); }
+                Xyyz::read_part_str(&mix_str[pos..], &mut card);
+                new_card = Some(card);
+            }
+            if let Some(card) = new_card {
+                if let Some(mut card) = current_card { 
+                    set_card_range(&mut card, current_index-1); 
+                    cards.push(card); 
+                }
                 current_card = Some(card);
             }
             else if let Some(c) = current_card.as_mut() {
@@ -540,53 +576,42 @@ fn set_card_range(card: &mut Card, end: usize) {
     }
 }
 
-#[test]
-fn read_string_conf_test() {
-    read_string_conf(&vec!["/Users/iami/Workshop/code/mycard/ygopro/strings.conf"]);
-    println!("{:?}", SET_NAMES)
-}
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+    use crate::{card::CardTransformer, transformers::*};
 
-#[test]
-fn test_format() {
-    read_string_conf(&vec!["/Users/iami/Workshop/code/mycard/ygopro/strings.conf"]);
-    let cards = super::CDB::from_string("/Users/iami/Workshop/code/mycard/ygopro-database/locales/zh-CN/cards.cdb");
-    let s = cards.into_iter().map(|c| Xyyz::to_string(&c)).collect::<Vec<_>>().join("\n\n");
-    std::fs::write("/Users/iami/Workshop/code/mycard/cdb-transformer/test.log", s).unwrap();
-} 
+    #[test]
+    fn read_string_conf_test() {
+        read_string_conf(&vec![Path::new(env!("CARGO_MANIFEST_DIR")).join("src/transformers/test_data/strings.conf")]);
+        println!("{:?}", SET_NAMES)
+    }
 
-#[test]
-fn test_parse() {
-    read_string_conf(&vec!["/Users/iami/Workshop/code/mycard/ygopro/strings.conf"]);
-    let cards = std::fs::read_to_string("/Users/iami/Workshop/code/mycard/MyDIY/MyDIY.txt").unwrap();
-    let cc = Xyyz::from_string(&cards);
-    println!("{:?}", cc.len());
-    let s = cc.into_iter().map(|c| Xyyz::to_string(&c)).collect::<Vec<_>>().join("\n\n");
-    std::fs::write("/Users/iami/Workshop/code/mycard/cdb-transformer/test2.log", s).unwrap();
-}
+    #[test]
+    fn test_format() {
+        read_string_conf(&vec![Path::new(env!("CARGO_MANIFEST_DIR")).join("src/transformers/test_data/strings.conf")]);
+        let cards = CDB::from_string("/Users/iami/Workshop/code/mycard/ygopro-database/locales/zh-CN/cards.cdb");
+        let s = cards.into_iter().map(|c| Xyyz::to_string(&c)).collect::<Vec<_>>().join("\n\n");
+        std::fs::write("/Users/iami/Workshop/code/mycard/cdb-transformer/test.log", s).unwrap();
+    } 
 
-#[test]
-fn test_parse_text() {
-    let text = "
-游戏王九项修改器(65123333) 地/水/炎/风/光/暗 LINK-0 创世神/连接 0  (Custom)
-——————第一页——————
-
-日食爆龙(172017203) 暗 LINK-2 龙/连接 1600 [↓][↘] (Custom)
-光属性龙族怪兽+暗属性龙族怪兽
-①：这张卡连接召唤成功时发动。这张卡以外的场上的怪兽的攻击力只要这张卡在场上表侧表示变成0。为这个效果下降的攻击力每有500，把1个「燃料指示物」在这张卡上放置。
-②：1回合1次，把这张卡上1个「燃料指示物」取除才能发动。从卡组选光·暗属性龙族怪兽各1只除外。这个效果发动的回合，自己不能把龙族怪兽以外的怪兽效果发动。
-③：龙族怪兽的效果发动时，把这张卡解放才能发动。为这张卡连接召唤的那一组素材在墓地集齐的场合，把那些怪兽在自己场上特殊召唤。那之后，可以把这张卡放置过的「燃料指示物」数量的「燃料指示物」在自己场上1只「主宰龙 无穷烈日」上放置。
-
-#这是一行注释
-S.A.R.A.(172016020) 无 3星 龙/调整 0 1800 (Custom)
-这张卡的属性是最后召唤·特殊召唤·反转召唤的怪兽的属性。
-①：对方的主要阶段，把手卡的这张卡送去墓地才能发动。从卡组选1张和这张卡属性相同的攻0/防1800的调整怪兽加入手卡。这个效果发动的回合，这张卡是公开表示的场合，自己不是与这张卡属性相同的怪兽的效果不能发动。
-
-原质阿尔法(114514269) 暗 3星 恶魔/通常 1000 1000 (Custom)
-系列：原质炉
-起点之果。
-
-青眼白龙(89631141=>89631139) 通常魔法
-以高攻击力著称的传说之龙。任何对手都能粉碎，其破坏力不可估量。";
-    let cc = Xyyz::from_string(text);
-    println!("{:?}", cc[4])
+    #[test]
+    fn test_parse_text() {
+        let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/transformers/test_data/xyyz.txt");
+        let text = std::fs::read_to_string(file).expect("Failed to read test file");
+        let cards = Xyyz::from_string(&text);
+        for  card in cards {
+            println!("{:?}", card)
+        }
+    }
+    
+    #[test]
+    fn test_parse_weak_text() {
+        let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/transformers/test_data/xyyz_weak.txt");
+        let text = std::fs::read_to_string(file).expect("Failed to read test file");
+        let cards = Xyyz::from_string(&text);
+        for  card in cards {
+            println!("{:?}", card)
+        }
+    }
 }

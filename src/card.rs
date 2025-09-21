@@ -82,6 +82,32 @@ pub struct Card {
 	pub range: Option<Range>	
 }
 
+impl Card {
+	pub fn new() -> Card {
+		return Card {
+			code: 0,
+			name: String::new(),
+			desc: String::new(),
+			alias: 0,
+			setcode: 0,
+			_type: Type::empty(),
+			level: 0,
+			attribute: Attribute::empty(),
+			race: Race::empty(),
+			attack: 0,
+			defense: 0,
+			lscale: 0,
+			rscale: 0,
+			link_marker: Linkmarkers::empty(),
+			ot: OT::OCG | OT::TCG,
+			category: Category::empty(),
+			texts: Vec::new(),
+			pack: None,
+			range: None
+		};
+	}
+}
+
 pub trait CardTransformer {
 	fn to_string(card: &Card) -> String;
 	fn from_string(str: &str) -> Vec<Card>;

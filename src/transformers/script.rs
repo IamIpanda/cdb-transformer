@@ -68,7 +68,6 @@ impl Script {
     }
 }
 
-
 #[test]
 fn test_parse() {
     let cards = Script::from_string("
