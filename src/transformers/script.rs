@@ -68,41 +68,48 @@ impl Script {
     }
 }
 
-#[test]
-fn test_parse() {
-    let cards = Script::from_string("
-    --------------------------------------------------------
-    --- 王家的人柱(172016025) 通常陷阱 (Custom)
-    --- ①：当自己场上有「王家长眠之谷」存在时才能发动。
-    ---    双方玩家把卡组·额外卡组中的怪兽卡全部送去墓地。
-    --------------------------------------------------------
-local s,id,o=GetID()
-    ");
-    println!("{}", Script::to_string(&cards[0]))
-}
+#[cfg(test)]
+mod test {
+    use crate::card::{Card, CardTransformer};
+    use crate::transformers::Script;
 
-#[test]
-fn test_format() {
-    let card = Card {
-        code: 10000,
-        name: "测试".to_string(),
-        desc: "①：抽1张卡。再选1张手卡丢弃。抽1张卡。再选1张手卡丢弃。抽1张卡。再选1张手卡丢弃。抽1张卡。再选1张手卡丢弃。抽1张卡。再选1张手卡丢弃。抽1张卡。再选1张手卡丢弃。\n②：回复100基本分。".to_string(),
-        alias: 0,
-        setcode: 0,
-        _type: crate::constants::Type::Spell,
-        level: 0,
-        attribute: crate::constants::Attribute::empty(),
-        race: crate::constants::Race::empty(),
-        attack: 0,
-        defense: 0,
-        lscale: 0,
-        rscale: 0,
-        link_marker: crate::constants::Linkmarkers::empty(),
-        ot: crate::constants::OT::OCG | crate::constants::OT::TCG,
-        category: crate::constants::Category::empty(),
-        texts: vec![],
-        pack: None,
-        range: None
-    };
-    println!("{}", Script::to_string(&card))
+
+    #[test]
+    fn test_parse() {
+        let cards = Script::from_string("
+        --------------------------------------------------------
+        --- 王家的人柱(172016025) 通常陷阱 (Custom)
+        --- ①：当自己场上有「王家长眠之谷」存在时才能发动。
+        ---    双方玩家把卡组·额外卡组中的怪兽卡全部送去墓地。
+        --------------------------------------------------------
+    local s,id,o=GetID()
+        ");
+        println!("{}", Script::to_string(&cards[0]))
+    }
+
+    #[test]
+    fn test_format() {
+        let card = Card {
+            code: 10000,
+            name: "测试".to_string(),
+            desc: "①：抽1张卡。再选1张手卡丢弃。抽1张卡。再选1张手卡丢弃。抽1张卡。再选1张手卡丢弃。抽1张卡。再选1张手卡丢弃。抽1张卡。再选1张手卡丢弃。抽1张卡。再选1张手卡丢弃。\n②：回复100基本分。".to_string(),
+            alias: 0,
+            setcode: 0,
+            _type: crate::constants::Type::Spell,
+            level: 0,
+            attribute: crate::constants::Attribute::empty(),
+            race: crate::constants::Race::empty(),
+            attack: 0,
+            defense: 0,
+            lscale: 0,
+            rscale: 0,
+            link_marker: crate::constants::Linkmarkers::empty(),
+            ot: crate::constants::OT::OCG | crate::constants::OT::TCG,
+            category: crate::constants::Category::empty(),
+            texts: vec![],
+            pack: None,
+            range: None
+        };
+        println!("{}", Script::to_string(&card))
+    }
 }

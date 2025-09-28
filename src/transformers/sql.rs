@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS texts(id integer primary key,name text,desc text,str1
 
 impl CardTransformer for SQL {
     fn to_string(card: &crate::card::Card) -> String {
-        let level = card.level + if card._type.contains(Type::Pendulum) { card.lscale<<16 + card.rscale<<24 } else {0};
+        let level = card.level + (if card._type.contains(Type::Pendulum) { (card.lscale<<16) + (card.rscale<<24) } else {0});
         let defense = if card._type.contains(Type::Link) { card.link_marker.bits() } else { card.defense };
         let text_keys = STR_FIELD_NAMES[0..16].into_iter().map(|s| format!(",{}",s)).collect::<Vec<_>>().join("");
         let mut text_descs = card.texts.iter().map(|s| format!(",'{}'", s.replace("'", "''"))).collect::<Vec<_>>();
@@ -43,17 +43,31 @@ impl CardTransformer for SQL {
     }
 }
 
+#[cfg(test)]
+mod test {
+    use std::fs::read_to_string;
+    use std::path::Path;
 
-#[test]
-fn test_format() {
-	let cards = super::CDB::from_string("/Users/iami/Workshop/code/mycard/ygopro-database/locales/zh-CN/cards.cdb");
-	let s = cards.into_iter().map(|c| SQL::to_string(&c)).collect::<Vec<_>>().join("\n\n");
-	std::fs::write("/Users/iami/Workshop/code/mycard/cdb-transformer/test2.log", s).unwrap();
-}
+    use crate::card::CardTransformer;
+    use crate::transformers::*;
 
-#[test]
-fn test_parse() {
-	let cards = std::fs::read_to_string("/Users/iami/Workshop/code/mycard/cdb-transformer/test2.log").unwrap();
-	let cc = SQL::from_string(&cards);
-	println!("{:?}", cc.len());
+    #[test]
+    fn test_format() {
+        let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/transformers/test_data/xyyz.txt");
+        let text = std::fs::read_to_string(file).expect("Failed to read test file");
+        let cards = Xyyz::from_string(&text);
+        for card in cards {
+            println!("{:?}", SQL::to_string(&card))
+        }
+    }
+
+    #[test]
+    fn test_parse() {
+        let path_sql = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/transformers/test_data/xyyz.txt");
+        let sql = read_to_string(path_sql).expect("Failed to read text sql file");
+        let cards = SQL::from_string(&sql);
+        for card in cards {
+            println!("{:?}", Xyyz::to_string(&card))
+        }
+    }
 }

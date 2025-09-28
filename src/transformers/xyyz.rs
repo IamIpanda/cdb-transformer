@@ -470,7 +470,6 @@ impl CardTransformer for Xyyz {
         let mut current_index = 0;
         let line_regex = Regex::new(r"^(\[.+\-.+\]\s+)?(.+)\((\d+)(\s*=>\s*(\d+)\s*)?\)\s+(.+?)\s*(\((.*)\))?$").unwrap();
         let line_weak_regex = Regex::new(r"^(\[.+\-.+\]\s+)?(.+?)(\S+魔法|\S+陷阱|(\d+|∞|\?))\s*(\((.*)\))?$").unwrap();
-        let parts_regex = Regex::new(r"^(.+?) (.+?) (.+?)((?:/.+?)*) (\d+|\?|∞) ?(\d+|\?|∞|(\[.+\])?)$").unwrap();
         let pendulum_regex: Regex = Regex::new(r"^←(\d+)\s*【灵摆】\s*(\d+)→$").unwrap();
         for line in str.split("\n") {
             let current_line_length = line.chars().count() + 1;
@@ -579,7 +578,8 @@ fn set_card_range(card: &mut Card, end: usize) {
 #[cfg(test)]
 mod tests {
     use std::path::Path;
-    use crate::{card::CardTransformer, transformers::*};
+    use crate::card::CardTransformer;
+    use crate::transformers::*;
 
     #[test]
     fn read_string_conf_test() {
@@ -587,12 +587,15 @@ mod tests {
         println!("{:?}", SET_NAMES)
     }
 
+    // I don't know why this case fail.
     #[test]
     fn test_format() {
         read_string_conf(&vec![Path::new(env!("CARGO_MANIFEST_DIR")).join("src/transformers/test_data/strings.conf")]);
-        let cards = CDB::from_string("/Users/iami/Workshop/code/mycard/ygopro-database/locales/zh-CN/cards.cdb");
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/transformers/test_data/cards.cdb");
+        println!("{:?}", path);
+        let cards = CDB::from_string(path.as_os_str().to_str().unwrap());
         let s = cards.into_iter().map(|c| Xyyz::to_string(&c)).collect::<Vec<_>>().join("\n\n");
-        std::fs::write("/Users/iami/Workshop/code/mycard/cdb-transformer/test.log", s).unwrap();
+        std::fs::write(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/transformers/test_data/cards.txt"), s).unwrap()
     } 
 
     #[test]

@@ -6,6 +6,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 bitflags! {
     #[repr(C)]
+    #[cfg_attr(target_arch="wasm32",wasm_bindgen)]
     #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
     pub struct Attribute: u32 {
         const Earth = 1;
@@ -19,6 +20,7 @@ bitflags! {
 }
 
 bitflags! {
+    #[cfg_attr(target_arch="wasm32",wasm_bindgen)]
     #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
     pub struct OT: u32 {
         const OCG = 1;
@@ -31,6 +33,7 @@ bitflags! {
 }
 
 bitflags! {
+    #[cfg_attr(target_arch="wasm32",wasm_bindgen)]
     #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
     pub struct Race: u32 {
         const Warrior = 1;
@@ -63,6 +66,7 @@ bitflags! {
 }
 
 bitflags! {
+    #[cfg_attr(target_arch="wasm32",wasm_bindgen)]
     #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
     pub struct Type: u32 {
         const Monster = 1;
@@ -94,6 +98,7 @@ bitflags! {
 }
 
 bitflags! {
+    #[cfg_attr(target_arch="wasm32",wasm_bindgen)]
     #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
     pub struct Linkmarkers: i32 {
         const BottomLeft = 1;
@@ -108,6 +113,7 @@ bitflags! {
 }
 
 bitflags! {
+    #[cfg_attr(target_arch="wasm32",wasm_bindgen)]
     #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
     pub struct Category: u64 {
         const category1 = 0x1;
