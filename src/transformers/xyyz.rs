@@ -517,6 +517,7 @@ impl CardTransformer for Xyyz {
                 let mut card = Card::new();
                 card.pack = groups.get(1).map(|u| PackInfo { id: 0, pack_id: u.as_str()[1..u.as_str().len()-1].to_string(), pack: String::new(), rarity: vec![], date: String::new() });
                 card.name = mix_str[0..pos].to_string();
+                card.range = Some((current_index..current_index).into()); 
                 if let Some(ot) = groups.get(6) {
                     card.ot = Self::get_ot(ot.as_str());
                 }

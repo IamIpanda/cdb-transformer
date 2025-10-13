@@ -36,16 +36,22 @@ pub struct Card {
 	pub desc: String,
 	pub alias: u32,
 	pub setcode: u64,
+	#[cfg_attr(target_arch = "wasm32", wasm_bindgen(skip))]
 	pub _type: Type,
 	pub level: u32,
+	#[cfg_attr(target_arch = "wasm32", wasm_bindgen(skip))]
 	pub attribute: Attribute,
+	#[cfg_attr(target_arch = "wasm32", wasm_bindgen(skip))]
 	pub race: Race,
 	pub attack: i32,
 	pub defense: i32,
 	pub lscale: u32,
 	pub rscale: u32,
+	#[cfg_attr(target_arch = "wasm32", wasm_bindgen(skip))]
 	pub link_marker: Linkmarkers,
+	#[cfg_attr(target_arch = "wasm32", wasm_bindgen(skip))]
 	pub ot: OT,
+	#[cfg_attr(target_arch = "wasm32", wasm_bindgen(skip))]
 	pub category: Category,
 	pub texts: Vec<String>,
 	pub pack: Option<PackInfo>,
@@ -77,6 +83,36 @@ impl Card {
 		};
 	}
 }
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+impl Card {
+	#[wasm_bindgen(getter = type)]
+	pub fn _type(&self) -> u32 { self._type.bits() }
+	#[wasm_bindgen(setter = type)]
+	pub fn set_type(&mut self, v: u32) { self._type = Type::from_bits_retain(v) }
+	#[wasm_bindgen(getter)]
+	pub fn attribute(&self) -> u32 { self.attribute.bits() }
+	#[wasm_bindgen(setter)]
+	pub fn set_attribute(&mut self, v: u32) { self.attribute = Attribute::from_bits_retain(v) }
+	#[wasm_bindgen(getter)]
+	pub fn race(&self) -> u32 { self.race.bits() }
+	#[wasm_bindgen(setter)]
+	pub fn set_race(&mut self, v: u32) { self.race = Race::from_bits_retain(v) }
+	#[wasm_bindgen(getter)]
+	pub fn linkmarker(&self) -> i32 { self.link_marker.bits() }
+	#[wasm_bindgen(setter)]
+	pub fn set_linkmarker(&mut self, v: i32) { self.link_marker = Linkmarkers::from_bits_retain(v) }
+	#[wasm_bindgen(getter)]
+	pub fn ot(&self) -> u32 { self.ot.bits() }
+	#[wasm_bindgen(setter)]
+	pub fn set_ot(&mut self, v: u32) { self.ot = OT::from_bits_retain(v) }
+	#[wasm_bindgen(getter)]
+	pub fn category(&self) -> u64 { self.category.bits() }
+	#[wasm_bindgen(setter)]
+	pub fn set_category(&mut self, v: u64) { self.category = Category::from_bits_retain(v) }
+}
+
 
 pub trait CardTransformer {
 	fn to_string(card: &Card) -> String;
