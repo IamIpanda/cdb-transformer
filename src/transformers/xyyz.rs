@@ -426,11 +426,11 @@ impl CardTransformer for Xyyz {
     fn to_string(card: &Card) -> String {
         let mut str = String::new();
         let alias_text = if card.alias > 0 { format!("=>{}", card.alias) } else { String::new() };
+        let code_text = if card.code > 0 { format!("({}{})", card.code, alias_text) }else { String::new() };
         if card._type.contains(Type::Monster) {
-            str += &format!("{}({}{}) {} {} {}{} {} {}", 
+            str += &format!("{}{} {} {} {}{} {} {}", 
                 card.name, 
-                card.code,
-                alias_text,
+                code_text,
                 Self::format_attribute(&card.attribute), 
                 Self::format_level(card), 
                 Self::format_race(&card.race), 
@@ -469,7 +469,7 @@ impl CardTransformer for Xyyz {
         let mut current_card: Option<Card> = None;
         let mut current_index = 0;
         let line_regex = Regex::new(r"^(\[.+\-.+\]\s+)?(.+)\((\d+)(\s*=>\s*(\d+)\s*)?\)\s+(.+?)\s*(\((.*)\))?$").unwrap();
-        let line_weak_regex = Regex::new(r"^(\[.+\-.+\]\s+)?(.+?)(\S+魔法|\S+陷阱|(\d+|∞|\?))\s*(\((.*)\))?$").unwrap();
+        let line_weak_regex = Regex::new(r"^(\[.+\-.+\]\s+)?((.+?)(\S+魔法|\S+陷阱|(\d+|∞|\?)|(\[.\])))\s*(\((.*)\))?$").unwrap();
         let pendulum_regex: Regex = Regex::new(r"^←(\d+)\s*【灵摆】\s*(\d+)→$").unwrap();
         for line in str.split("\n") {
             let current_line_length = line.chars().count() + 1;
@@ -518,10 +518,10 @@ impl CardTransformer for Xyyz {
                 card.pack = groups.get(1).map(|u| PackInfo { id: 0, pack_id: u.as_str()[1..u.as_str().len()-1].to_string(), pack: String::new(), rarity: vec![], date: String::new() });
                 card.name = mix_str[0..pos].to_string();
                 card.range = Some((current_index..current_index).into()); 
-                if let Some(ot) = groups.get(6) {
+                if let Some(ot) = groups.get(8) {
                     card.ot = Self::get_ot(ot.as_str());
                 }
-                Xyyz::read_part_str(&mix_str[pos..], &mut card);
+                Xyyz::read_part_str(&mix_str[pos..].trim(), &mut card);
                 new_card = Some(card);
             }
             if let Some(card) = new_card {
@@ -610,12 +610,17 @@ mod tests {
     }
     
     #[test]
-    fn test_parse_weak_text() {
+    fn test_format_and_parse_weak_text() {
         let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/transformers/test_data/xyyz_weak.txt");
         let text = std::fs::read_to_string(file).expect("Failed to read test file");
         let cards = Xyyz::from_string(&text);
-        for  card in cards {
-            println!("{:?}", card)
+        for card in cards {
+            println!("======================================");
+            println!("{:?}", card);
+            println!("--------------------------------------");
+            println!("{:}", Xyyz::to_string(&card));
+            println!("======================================");
+            println!("");
         }
     }
 }
