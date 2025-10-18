@@ -469,7 +469,7 @@ impl CardTransformer for Xyyz {
         let mut current_card: Option<Card> = None;
         let mut current_index = 0;
         let line_regex = Regex::new(r"^(\[.+\-.+\]\s+)?(.+)\((\d+)(\s*=>\s*(\d+)\s*)?\)\s+(.+?)\s*(\((.*)\))?$").unwrap();
-        let line_weak_regex = Regex::new(r"^(\[.+\-.+\]\s+)?((.+?)(\S+魔法|\S+陷阱|(\d+|∞|\?)|(\[.\])))\s*(\((.*)\))?$").unwrap();
+        let line_weak_regex = Regex::new(r"^(\[.+\-.+\]\s+)?((.+?)(\S+魔法|\S+陷阱|(?:\s(\d+|∞|\?))|(\[.\])))\s*(\((.*)\))?$").unwrap();
         let pendulum_regex: Regex = Regex::new(r"^←(\d+)\s*【灵摆】\s*(\d+)→$").unwrap();
         for line in str.split("\n") {
             let current_line_length = line.chars().count() + 1;
